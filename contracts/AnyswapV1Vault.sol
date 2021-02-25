@@ -117,7 +117,7 @@ library SafeERC20 {
     }
 }
 
-contract AnyswapV1Safe {
+contract AnyswapV1Vault {
     using SafeERC20 for IERC20;
 
     address private _oldMPC;
@@ -125,11 +125,11 @@ contract AnyswapV1Safe {
     uint256 private _newMPCEffectiveTime;
 
 
-    event LogChangeMPC(address indexed oldMPC, address indexed newMPC, uint indexed effectiveTime);
-    event LogAnySwapOut(bytes32 indexed txhash, address indexed token, address indexed to, uint amount);
-    event LogAnySwapIn(address indexed token, address indexed from, address indexed to, uint amount);
-    event LogAnyCallQueue(address indexed callContract, uint value, bytes data);
-    event LogAnyCallExecute(address indexed callContract, uint value, bytes data, bool success);
+    event LogChangeMPC(address indexed oldMPC, address indexed newMPC, uint indexed effectiveTime, uint chainID);
+    event LogAnySwapOut(bytes32 indexed txhash, address indexed token, address indexed to, uint amount, uint chainID);
+    event LogAnySwapIn(address indexed token, address indexed from, address indexed to, uint amount, uint chainID);
+    event LogAnyCallQueue(address indexed callContract, uint value, bytes data, uint chainID);
+    event LogAnyCallExecute(address indexed callContract, uint value, bytes data, bool success, uint chainID);
 
     modifier onlyMPC() {
         require(msg.sender == mpc(), "AnyswapV1Safe: FORBIDDEN");
@@ -143,21 +143,25 @@ contract AnyswapV1Safe {
         return _oldMPC;
     }
 
+    function chainID() public view returns (uint id) {
+        assembly {id := chainid()}
+    }
+
 
     function changeMPC(address newMPC) public onlyMPC returns (bool) {
         require(newMPC != address(0), "AnyswapV1Safe: address(0x0)");
         _oldMPC = mpc();
         _newMPC = newMPC;
         _newMPCEffectiveTime = block.timestamp + 2*24*3600;
-        emit LogChangeMPC(_oldMPC, _newMPC, _newMPCEffectiveTime);
+        emit LogChangeMPC(_oldMPC, _newMPC, _newMPCEffectiveTime, chainID());
         return true;
     }
 
     // Transfer tokens to the contract to be held on this side on the bridge
-    function anySwapIn(address[] calldata tokens, address[] calldata to, uint[] calldata amounts) public {
+    function anySwapIn(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs) public {
         for (uint i = 0; i < tokens.length; i++) {
             IERC20(tokens[i]).safeTransferFrom(msg.sender, address(this), amounts[i]);
-            emit LogAnySwapIn(tokens[i], msg.sender, to[i], amounts[i]);
+            emit LogAnySwapIn(tokens[i], msg.sender, to[i], amounts[i], chainIDs[i]);
         }
     }
 
@@ -165,7 +169,7 @@ contract AnyswapV1Safe {
     function anySwapOut(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts) public onlyMPC {
         for (uint i = 0; i < tokens.length; i++) {
             IERC20(tokens[i]).safeTransfer(to[i], amounts[i]);
-            emit LogAnySwapOut(txs[i], tokens[i], to[i], amounts[i]);
+            emit LogAnySwapOut(txs[i], tokens[i], to[i], amounts[i], chainID());
         }
     }
 
@@ -174,14 +178,14 @@ contract AnyswapV1Safe {
         bool success;
         for (uint i = 0; i < contracts.length; i++) {
             if (data[i].length > 0) (success,) = contracts[i].call{value:values[i]}(data[i]);
-            emit LogAnyCallExecute(contracts[i], values[i], data[i], success);
+            emit LogAnyCallExecute(contracts[i], values[i], data[i], success, chainID());
         }
     }
 
     // Queue cross-chain contract event
-    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data) external {
+    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata chainIDs) external {
         for (uint i = 0; i < contracts.length; i++) {
-            emit LogAnyCallQueue(contracts[i], values[i], data[i]);
+            emit LogAnyCallQueue(contracts[i], values[i], data[i], chainIDs[i]);
         }
     }
 
