@@ -246,8 +246,11 @@ contract Frax is IWERC10 {
         return true;
     }
 
-    function anyCall(uint value, address callContract, bytes memory data) external onlyOwner returns (bool success) {
-        if (data.length > 0) (success,) = callContract.call{value:value}(data);
+    function Swapout(uint256 amount, address bindaddr) public returns (bool) {
+        require(bindaddr != address(0), "bind address is the zero address");
+        _burn(msg.sender, amount);
+        emit LogSwapout(msg.sender, bindaddr, amount);
+        return true;
     }
 
     /// @dev Records current ERC2612 nonce for account. This value must be included whenever signature is generated for {permit}.
