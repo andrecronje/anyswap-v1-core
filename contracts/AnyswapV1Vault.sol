@@ -2,6 +2,12 @@
 
 pragma solidity 0.8.1;
 
+
+interface AnyswapV1ERC20 {
+    function Swapin(bytes32 txhash, address account, uint256 amount) external returns (bool);
+    function Swapout(uint256 amount, address bindaddr) external returns (bool);
+}
+
 /**
  * @dev Interface of the ERC20 standard as defined in the EIP.
  */
@@ -143,7 +149,7 @@ contract AnyswapV1Vault {
         return _oldMPC;
     }
 
-    function chainID() public view returns (uint id) {
+    function cID() public view returns (uint id) {
         assembly {id := chainid()}
     }
 
@@ -153,23 +159,36 @@ contract AnyswapV1Vault {
         _oldMPC = mpc();
         _newMPC = newMPC;
         _newMPCEffectiveTime = block.timestamp + 2*24*3600;
-        emit LogChangeMPC(_oldMPC, _newMPC, _newMPCEffectiveTime, chainID());
+        emit LogChangeMPC(_oldMPC, _newMPC, _newMPCEffectiveTime, cID());
         return true;
     }
 
+    function anySwapIn(address token, address to, uint amount, uint chainID, bool shouldBurn) public {
+        if (shouldBurn) {
+            AnyswapV1ERC20(token).Swapout(amount, to);
+        } else {
+            IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        }
+
+        emit LogAnySwapIn(token, msg.sender, to, amount, chainID);
+    }
+
     // Transfer tokens to the contract to be held on this side on the bridge
-    function anySwapIn(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs) public {
+    function anySwapIn(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs, bool[] calldata shouldBurn) external {
         for (uint i = 0; i < tokens.length; i++) {
-            IERC20(tokens[i]).safeTransferFrom(msg.sender, address(this), amounts[i]);
-            emit LogAnySwapIn(tokens[i], msg.sender, to[i], amounts[i], chainIDs[i]);
+            anySwapIn(tokens[i], to[i], amounts[i], chainIDs[i], shouldBurn[i]);
         }
     }
 
     // Transfer tokens out of the contract with redemption on other side
-    function anySwapOut(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts) public onlyMPC {
+    function anySwapOut(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts, bool[] calldata shouldMint) public onlyMPC {
         for (uint i = 0; i < tokens.length; i++) {
-            IERC20(tokens[i]).safeTransfer(to[i], amounts[i]);
-            emit LogAnySwapOut(txs[i], tokens[i], to[i], amounts[i], chainID());
+            if (shouldMint[i]) {
+              AnyswapV1ERC20(tokens[i]).Swapin(txs[i], to[i], amounts[i]);
+            } else {
+              IERC20(tokens[i]).safeTransfer(to[i], amounts[i]);
+            }
+            emit LogAnySwapOut(txs[i], tokens[i], to[i], amounts[i], cID());
         }
     }
 
@@ -178,7 +197,7 @@ contract AnyswapV1Vault {
         bool success;
         for (uint i = 0; i < contracts.length; i++) {
             if (data[i].length > 0) (success,) = contracts[i].call{value:values[i]}(data[i]);
-            emit LogAnyCallExecute(contracts[i], values[i], data[i], success, chainID());
+            emit LogAnyCallExecute(contracts[i], values[i], data[i], success, cID());
         }
     }
 
