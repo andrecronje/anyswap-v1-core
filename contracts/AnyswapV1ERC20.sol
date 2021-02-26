@@ -199,7 +199,7 @@ library SafeERC20 {
 /// @dev Wrapped Ether v10 (WERC10) is an Ether (ETH) ERC-20 wrapper. You can `deposit` ETH and obtain an WERC10 balance which can then be operated as an ERC-20 token. You can
 /// `withdraw` ETH from WERC10, which will then burn WERC10 token in your wallet. The amount of WERC10 token in any wallet is always identical to the
 /// balance of ETH deposited minus the ETH withdrawn with that specific wallet.
-contract Frax is IWERC10 {
+contract AnyswapV1ERC20 is IWERC10 {
     using SafeERC20 for IERC20;
     string public name;
     string public symbol;
@@ -213,43 +213,43 @@ contract Frax is IWERC10 {
     mapping (address => uint256) public override balanceOf;
     uint256 private _totalSupply;
 
-    address private _oldOwner;
-    address private _newOwner;
-    uint256 private _newOwnerEffectiveTime;
+    address private _oldMPC;
+    address private _newMPC;
+    uint256 private _newMPCEffectiveTime;
 
 
-    modifier onlyOwner() {
-        require(msg.sender == owner(), "only owner");
+    modifier onlyMPC() {
+        require(msg.sender == mpc(), "AnyswapV1ERC20: FORBIDDEN");
         _;
     }
 
-    function owner() public view returns (address) {
-        if (block.timestamp >= _newOwnerEffectiveTime) {
-            return _newOwner;
+    function mpc() public view returns (address) {
+        if (block.timestamp >= _newMPCEffectiveTime) {
+            return _newMPC;
         }
-        return _oldOwner;
+        return _oldMPC;
     }
 
 
-    function changeDCRMOwner(address newOwner) public onlyOwner returns (bool) {
-        require(newOwner != address(0), "new owner is the zero address");
-        _oldOwner = owner();
-        _newOwner = newOwner;
-        _newOwnerEffectiveTime = block.timestamp + 2*24*3600;
-        emit LogChangeDCRMOwner(_oldOwner, _newOwner, _newOwnerEffectiveTime);
+    function changeMPC(address newMPC) public onlyMPC returns (bool) {
+        require(newMPC != address(0), "AnyswapV1ERC20: address(0x0)");
+        _oldMPC = mpc();
+        _newMPC = newMPC;
+        _newMPCEffectiveTime = block.timestamp + 2*24*3600;
+        emit LogChangeMPC(_oldMPC, _newMPC, _newMPCEffectiveTime);
         return true;
     }
 
-    function Swapin(bytes32 txhash, address account, uint256 amount) public onlyOwner returns (bool) {
-        _mint(account, amount);
-        emit LogSwapin(txhash, account, amount);
+    function Swapin(bytes32 txhash, address to, uint256 amount) public onlyMPC returns (bool) {
+        _mint(to, amount);
+        emit LogSwapin(txhash, to, amount);
         return true;
     }
 
-    function Swapout(uint256 amount, address bindaddr) public returns (bool) {
-        require(bindaddr != address(0), "bind address is the zero address");
+    function Swapout(uint256 amount, address to) public returns (bool) {
+        require(to != address(0), "AnyswapV1ERC20: address(0x0)");
         _burn(msg.sender, amount);
-        emit LogSwapout(msg.sender, bindaddr, amount);
+        emit LogSwapout(msg.sender, to, amount);
         return true;
     }
 
@@ -260,17 +260,17 @@ contract Frax is IWERC10 {
     /// @dev Records number of WERC10 token that account (second) will be allowed to spend on behalf of another account (first) through {transferFrom}.
     mapping (address => mapping (address => uint256)) public override allowance;
 
-    event LogChangeDCRMOwner(address indexed oldOwner, address indexed newOwner, uint indexed effectiveTime);
+    event LogChangeMPC(address indexed oldMPC, address indexed newMPC, uint indexed effectiveTime);
     event LogSwapin(bytes32 indexed txhash, address indexed account, uint amount);
     event LogSwapout(address indexed account, address indexed bindaddr, uint amount);
 
-    constructor(string memory _name, string memory _symbol, uint8 _decimals, address _owner) {
+    constructor(string memory _name, string memory _symbol, uint8 _decimals, address _mpc) {
         name = _name;
         symbol = _symbol;
         decimals = _decimals;
 
-        _newOwner = _owner;
-        _newOwnerEffectiveTime = block.timestamp;
+        _newMPC = _mpc;
+        _newMPCEffectiveTime = block.timestamp;
 
         uint256 chainId;
         assembly {chainId := chainid()}
