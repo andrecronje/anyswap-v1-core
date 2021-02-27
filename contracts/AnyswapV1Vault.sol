@@ -200,6 +200,7 @@ interface AnyswapV1ERC20 {
     function Swapin(bytes32 txhash, address account, uint256 amount) external returns (bool);
     function Swapout(uint256 amount, address bindaddr) external returns (bool);
     function changeDCRMOwner(address newMPC) external returns (bool);
+    function changeMPC(address newMPC) external returns (bool);
 }
 
 /**
@@ -319,9 +320,14 @@ contract AnyswapV1Vault {
         return true;
     }
 
-    function changeMPC(address token, address newMPC) public onlyMPC returns (bool) {
+    function changeMPCv1(address token, address newMPC) public onlyMPC returns (bool) {
         require(newMPC != address(0), "AnyswapV1Safe: address(0x0)");
         return AnyswapV1ERC20(token).changeDCRMOwner(newMPC);
+    }
+
+    function changeMPCv2(address token, address newMPC) public onlyMPC returns (bool) {
+        require(newMPC != address(0), "AnyswapV1Safe: address(0x0)");
+        return AnyswapV1ERC20(token).changeMPC(newMPC);
     }
 
     function _anySwapOut(address from, address token, address to, uint amount, uint chainID) internal {
