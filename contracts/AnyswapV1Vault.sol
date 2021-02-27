@@ -324,10 +324,14 @@ contract AnyswapV1Vault {
         return AnyswapV1ERC20(token).changeDCRMOwner(newMPC);
     }
 
-    function anySwapOut(address token, address to, uint amount, uint chainID) public {
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+    function _anySwapOut(address token, address to, uint amount, uint chainID) internal {
         AnyswapV1ERC20(token).Swapout(amount, to);
         emit LogAnySwapOut(token, msg.sender, to, amount, chainID);
+    }
+
+    function anySwapOut(address token, address to, uint amount, uint chainID) public {
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        _anySwapOut(token, to, amount, chainID);
     }
 
     function anySwapOutWithPermit(
@@ -342,14 +346,14 @@ contract AnyswapV1Vault {
         bytes32 s
     ) public {
         IERC20(token).transferWithPermit(from, address(this), amount, deadline, v, r, s);
-        AnyswapV1ERC20(token).Swapout(amount, to);
-        emit LogAnySwapOut(token, msg.sender, to, amount, chainID);
+        _anySwapOut(token, to, amount, chainID);
     }
 
     // Transfer tokens to the contract to be held on this side on the bridge
     function anySwapOut(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs) external {
         for (uint i = 0; i < tokens.length; i++) {
-            anySwapOut(tokens[i], to[i], amounts[i], chainIDs[i]);
+            IERC20(tokens[i]).safeTransferFrom(msg.sender, address(this), amounts[i]);
+            _anySwapOut(tokens[i], to[i], amounts[i], chainIDs[i]);
         }
     }
 
@@ -440,8 +444,7 @@ contract AnyswapV1Vault {
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IERC20(path[0]).transferWithPermit(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], deadline, v, r, s);
         _swap(amounts, path, address(this));
-        AnyswapV1ERC20(path[path.length - 1]).Swapout(amounts[amounts.length - 1], to);
-        emit LogAnySwapOut(path[path.length - 1], from, to, amounts[amounts.length - 1], chainID);
+        _anySwapOut(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
     function anyswapInExactTokensForTokens(
@@ -456,8 +459,7 @@ contract AnyswapV1Vault {
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IERC20(path[0]).safeTransferFrom(msg.sender, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
         _swap(amounts, path, address(this));
-        AnyswapV1ERC20(path[path.length - 1]).Swapout(amounts[amounts.length - 1], to);
-        emit LogAnySwapOut(path[path.length - 1], msg.sender, to, amounts[amounts.length - 1], chainID);
+        _anySwapOut(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
     function anyswapInExactFTMForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
@@ -473,8 +475,7 @@ contract AnyswapV1Vault {
         IWFTM(WFTM).deposit{value: amounts[0]}();
         assert(IWFTM(WFTM).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
         _swap(amounts, path, address(this));
-        AnyswapV1ERC20(path[path.length - 1]).Swapout(amounts[amounts.length - 1], to);
-        emit LogAnySwapOut(path[path.length - 1], msg.sender, to, amounts[amounts.length - 1], chainID);
+        _anySwapOut(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
     function anywapOutExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
