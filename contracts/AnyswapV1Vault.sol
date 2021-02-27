@@ -420,7 +420,7 @@ contract AnyswapV1Vault {
         }
     }
 
-    function anyswapInExactTokensForTokens(
+    function anySwapInExactTokensForTokens(
         bytes32 txs,
         uint amountIn,
         uint amountOutMin,
@@ -434,7 +434,7 @@ contract AnyswapV1Vault {
         _swap(amounts, path, to);
     }
 
-    function anyswapOutExactTokensForTokensWithPermit(
+    function anySwapOutExactTokensForTokensWithPermit(
         address from,
         uint amountIn,
         uint amountOutMin,
@@ -453,7 +453,7 @@ contract AnyswapV1Vault {
         _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
-    function anyswapOutExactTokensForTokens(
+    function anySwapOutExactTokensForTokens(
         uint amountIn,
         uint amountOutMin,
         address[] calldata path,
@@ -468,7 +468,7 @@ contract AnyswapV1Vault {
         _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
-    function anyswapOutExactFTMForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
+    function anySwapOutExactFTMForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
         external
         virtual
         payable
@@ -484,7 +484,7 @@ contract AnyswapV1Vault {
         _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
-    function anywaInExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    function anySwapInExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
         external
         onlyMPC
         virtual
