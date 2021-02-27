@@ -448,14 +448,29 @@ contract AnyswapV1Vault {
         address[] calldata path,
         address to,
         uint deadline
-    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
+    ) external onlyMPC virtual ensure(deadline) returns (uint[] memory amounts) {
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         AnyswapV1ERC20(path[0]).Swapin(txs, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
         _swap(amounts, path, to);
     }
 
-    function swapExactFTMForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)
+    function swapExactTokensForTokensAndCrossChain(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint chainID
+    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
+        amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
+        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
+        IERC20(path[0]).safeTransferFrom(msg.sender, address(this), amountIn);
+        _swap(amounts, path, address(this));
+        anySwapIn(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
+    }
+
+    function swapExactFTMForTokensAndCrossChain(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
         external
         virtual
         payable
@@ -467,11 +482,13 @@ contract AnyswapV1Vault {
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IWFTM(WFTM).deposit{value: amounts[0]}();
         assert(IWFTM(WFTM).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
-        _swap(amounts, path, to);
+        _swap(amounts, path, address(this));
+        anySwapIn(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
     function swapExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
         external
+        onlyMPC
         virtual
         ensure(deadline)
         returns (uint[] memory amounts)
