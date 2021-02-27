@@ -199,79 +199,22 @@ interface IWFTM {
 interface AnyswapV1ERC20 {
     function Swapin(bytes32 txhash, address account, uint256 amount) external returns (bool);
     function Swapout(uint256 amount, address bindaddr) external returns (bool);
+    function changeDCRMOwner(address newMPC) external returns (bool);
 }
 
 /**
  * @dev Interface of the ERC20 standard as defined in the EIP.
  */
 interface IERC20 {
-    /**
-     * @dev Returns the amount of tokens in existence.
-     */
     function totalSupply() external view returns (uint256);
-
-    /**
-     * @dev Returns the amount of tokens owned by `account`.
-     */
     function balanceOf(address account) external view returns (uint256);
-
-    /**
-     * @dev Moves `amount` tokens from the caller's account to `recipient`.
-     *
-     * Returns a boolean value indicating whFTMer the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
     function transfer(address recipient, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Returns the remaining number of tokens that `spender` will be
-     * allowed to spend on behalf of `owner` through {transferFrom}. This is
-     * zero by default.
-     *
-     * This value changes when {approve} or {transferFrom} are called.
-     */
     function allowance(address owner, address spender) external view returns (uint256);
-
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-     *
-     * Returns a boolean value indicating whFTMer the operation succeeded.
-     *
-     * IMPORTANT: Beware that changing an allowance with this mFTMod brings the risk
-     * that someone may use both the old and the new allowance by unfortunate
-     * transaction ordering. One possible solution to mitigate this race
-     * condition is to first reduce the spender's allowance to 0 and set the
-     * desired value afterwards:
-     * https://github.com/FTMereum/EIPs/issues/20#issuecomment-263524729
-     *
-     * Emits an {Approval} event.
-     */
     function approve(address spender, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Moves `amount` tokens from `sender` to `recipient` using the
-     * allowance mechanism. `amount` is then deducted from the caller's
-     * allowance.
-     *
-     * Returns a boolean value indicating whFTMer the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function transferWithPermit(address target, address to, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external returns (bool);
 
-    /**
-     * @dev Emitted when `value` tokens are moved from one account (`from`) to
-     * another (`to`).
-     *
-     * Note that `value` may be zero.
-     */
     event Transfer(address indexed from, address indexed to, uint256 value);
-
-    /**
-     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-     * a call to {approve}. `value` is the new allowance.
-     */
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
@@ -346,8 +289,8 @@ contract AnyswapV1Vault {
 
     event LogChangeMPC(address indexed oldMPC, address indexed newMPC, uint indexed effectiveTime, uint chainID);
     event LogChangeRouter(address indexed oldRouter, address indexed newRouter, uint chainID);
-    event LogAnySwapOut(bytes32 indexed txhash, address indexed token, address indexed to, uint amount, uint chainID);
-    event LogAnySwapIn(address indexed token, address indexed from, address indexed to, uint amount, uint chainID);
+    event LogAnySwapIn(bytes32 indexed txhash, address indexed token, address indexed to, uint amount, uint chainID);
+    event LogAnySwapOut(address indexed token, address indexed from, address indexed to, uint amount, uint chainID);
     event LogAnyCallQueue(address indexed callContract, uint value, bytes data, uint chainID);
     event LogAnyCallExecute(address indexed callContract, uint value, bytes data, bool success, uint chainID);
 
@@ -376,27 +319,53 @@ contract AnyswapV1Vault {
         return true;
     }
 
-    function anySwapIn(address token, address to, uint amount, uint chainID) public {
+    function changeMPC(address token, address newMPC) public onlyMPC returns (bool) {
+        require(newMPC != address(0), "AnyswapV1Safe: address(0x0)");
+        return AnyswapV1ERC20(token).changeDCRMOwner(newMPC);
+    }
+
+    function anySwapOut(address token, address to, uint amount, uint chainID) public {
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         AnyswapV1ERC20(token).Swapout(amount, to);
-        emit LogAnySwapIn(token, msg.sender, to, amount, chainID);
+        emit LogAnySwapOut(token, msg.sender, to, amount, chainID);
+    }
+
+    function anySwapOutWithPermit(
+        address from,
+        address token,
+        address to,
+        uint amount,
+        uint chainID,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public {
+        IERC20(token).transferWithPermit(from, address(this), amount, deadline, v, r, s);
+        AnyswapV1ERC20(token).Swapout(amount, to);
+        emit LogAnySwapOut(token, msg.sender, to, amount, chainID);
     }
 
     // Transfer tokens to the contract to be held on this side on the bridge
-    function anySwapIn(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs) external {
+    function anySwapOut(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs) external {
         for (uint i = 0; i < tokens.length; i++) {
-            anySwapIn(tokens[i], to[i], amounts[i], chainIDs[i]);
+            anySwapOut(tokens[i], to[i], amounts[i], chainIDs[i]);
         }
     }
 
-    function anySwapOut(bytes32 txs, address token, address to, uint amount) public {
-        IERC20(token).safeTransfer(to, amount);
-        emit LogAnySwapOut(txs, token, to, amount, cID());
+    function _anySwapIn(bytes32 txs, address token, address to, uint amount) internal {
+        AnyswapV1ERC20(token).Swapin(txs, to, amount);
+        emit LogAnySwapIn(txs, token, to, amount, cID());
+    }
+
+    function anySwapIn(bytes32 txs, address token, address to, uint amount) external onlyMPC {
+        _anySwapIn(txs, token, to, amount);
     }
 
     // Transfer tokens out of the contract with redemption on other side
-    function anySwapOut(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts) public onlyMPC {
+    function anySwapIn(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts) external onlyMPC {
         for (uint i = 0; i < tokens.length; i++) {
-            anySwapOut(txs[i], tokens[i], to[i], amounts[i]);
+            _anySwapIn(txs[i], tokens[i], to[i], amounts[i]);
         }
     }
 
@@ -441,7 +410,7 @@ contract AnyswapV1Vault {
         }
     }
 
-    function swapExactTokensForTokens(
+    function anyswapOutExactTokensForTokens(
         bytes32 txs,
         uint amountIn,
         uint amountOutMin,
@@ -455,7 +424,27 @@ contract AnyswapV1Vault {
         _swap(amounts, path, to);
     }
 
-    function swapExactTokensForTokensAndCrossChain(
+    function anyswapInExactTokensForTokensWithPermit(
+        address from,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint chainID,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
+        amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
+        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
+        IERC20(path[0]).transferWithPermit(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], deadline, v, r, s);
+        _swap(amounts, path, address(this));
+        AnyswapV1ERC20(path[path.length - 1]).Swapout(amounts[amounts.length - 1], to);
+        emit LogAnySwapOut(path[path.length - 1], from, to, amounts[amounts.length - 1], chainID);
+    }
+
+    function anyswapInExactTokensForTokens(
         uint amountIn,
         uint amountOutMin,
         address[] calldata path,
@@ -465,12 +454,13 @@ contract AnyswapV1Vault {
     ) external virtual ensure(deadline) returns (uint[] memory amounts) {
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        IERC20(path[0]).safeTransferFrom(msg.sender, address(this), amountIn);
+        IERC20(path[0]).safeTransferFrom(msg.sender, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
         _swap(amounts, path, address(this));
-        anySwapIn(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
+        AnyswapV1ERC20(path[path.length - 1]).Swapout(amounts[amounts.length - 1], to);
+        emit LogAnySwapOut(path[path.length - 1], msg.sender, to, amounts[amounts.length - 1], chainID);
     }
 
-    function swapExactFTMForTokensAndCrossChain(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
+    function anyswapInExactFTMForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
         external
         virtual
         payable
@@ -483,10 +473,11 @@ contract AnyswapV1Vault {
         IWFTM(WFTM).deposit{value: amounts[0]}();
         assert(IWFTM(WFTM).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
         _swap(amounts, path, address(this));
-        anySwapIn(path[path.length - 1], to, amounts[amounts.length - 1], chainID);
+        AnyswapV1ERC20(path[path.length - 1]).Swapout(amounts[amounts.length - 1], to);
+        emit LogAnySwapOut(path[path.length - 1], msg.sender, to, amounts[amounts.length - 1], chainID);
     }
 
-    function swapExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    function anywapOutExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
         external
         onlyMPC
         virtual
