@@ -211,6 +211,7 @@ interface IERC20 {
     function transfer(address recipient, uint256 amount) external returns (bool);
     function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 amount) external returns (bool);
+    function permit(address target, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
     function transferWithPermit(address target, address to, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external returns (bool);
 
@@ -371,14 +372,14 @@ contract AnyswapV1Vault {
     }
 
     // Queue cross-chain contract event
-    function anyQueue(uint value, address contracts, bytes calldata data, uint fromChainID, uint toChainID) external {
-        emit LogAnyCallQueue(contracts, value, data, fromChainID, toChainID);
+    function anyQueue(uint value, address contracts, bytes calldata data, uint toChainID) external {
+        emit LogAnyCallQueue(contracts, value, data, cID(), toChainID);
     }
 
     // Queue cross-chain contract event
-    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata fromChainIDs, uint[] calldata toChainIDs) external {
+    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata toChainIDs) external {
         for (uint i = 0; i < contracts.length; i++) {
-            emit LogAnyCallQueue(contracts[i], values[i], data[i], fromChainIDs[i], toChainIDs[i]);
+            emit LogAnyCallQueue(contracts[i], values[i], data[i], cID(), toChainIDs[i]);
         }
     }
 
@@ -412,7 +413,7 @@ contract AnyswapV1Vault {
         _swap(amounts, path, to);
     }
 
-    function anySwapOutExactTokensForTokensWithPermit(
+    function anySwapOutExactTokensForTokensWithTransferPermit(
         address from,
         uint amountIn,
         uint amountOutMin,
@@ -427,7 +428,27 @@ contract AnyswapV1Vault {
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IERC20(path[0]).transferWithPermit(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], deadline, v, r, s);
-        _swap(amounts, path, address(this));
+        _swap(amounts, path, from);
+        _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
+    }
+
+    function anySwapOutExactTokensForTokensWithPermit(
+        address from,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint toChainID,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
+        amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
+        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
+        IERC20(path[0]).permit(from, address(this), amounts[0], deadline, v, r, s);
+        IERC20(path[0]).safeTransferFrom(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
+        _swap(amounts, path, from);
         _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
     }
 
@@ -442,7 +463,7 @@ contract AnyswapV1Vault {
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IERC20(path[0]).safeTransferFrom(msg.sender, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
-        _swap(amounts, path, address(this));
+        _swap(amounts, path, msg.sender);
         _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
     }
 
@@ -458,7 +479,7 @@ contract AnyswapV1Vault {
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IwNATIVE(wNATIVE).deposit{value: amounts[0]}();
         assert(IwNATIVE(wNATIVE).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
-        _swap(amounts, path, address(this));
+        _swap(amounts, path, msg.sender);
         _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
     }
 
