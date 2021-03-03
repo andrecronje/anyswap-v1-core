@@ -6,73 +6,16 @@ pragma solidity 0.8.1;
  * @dev Interface of the ERC20 standard as defined in the EIP.
  */
 interface IERC20 {
-    /**
-     * @dev Returns the amount of tokens in existence.
-     */
     function totalSupply() external view returns (uint256);
-
-    /**
-     * @dev Returns the amount of tokens owned by `account`.
-     */
+    function decimals() external view returns (uint8);
     function balanceOf(address account) external view returns (uint256);
-
-    /**
-     * @dev Moves `amount` tokens from the caller's account to `recipient`.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
     function transfer(address recipient, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Returns the remaining number of tokens that `spender` will be
-     * allowed to spend on behalf of `owner` through {transferFrom}. This is
-     * zero by default.
-     *
-     * This value changes when {approve} or {transferFrom} are called.
-     */
     function allowance(address owner, address spender) external view returns (uint256);
-
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * IMPORTANT: Beware that changing an allowance with this method brings the risk
-     * that someone may use both the old and the new allowance by unfortunate
-     * transaction ordering. One possible solution to mitigate this race
-     * condition is to first reduce the spender's allowance to 0 and set the
-     * desired value afterwards:
-     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-     *
-     * Emits an {Approval} event.
-     */
     function approve(address spender, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Moves `amount` tokens from `sender` to `recipient` using the
-     * allowance mechanism. `amount` is then deducted from the caller's
-     * allowance.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-
-    /**
-     * @dev Emitted when `value` tokens are moved from one account (`from`) to
-     * another (`to`).
-     *
-     * Note that `value` may be zero.
-     */
+    function permit(address target, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
+    function transferWithPermit(address target, address to, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external returns (bool);
     event Transfer(address indexed from, address indexed to, uint256 value);
-
-    /**
-     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-     * a call to {approve}. `value` is the new allowance.
-     */
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
@@ -86,29 +29,6 @@ interface IERC20 {
  * See https://eips.ethereum.org/EIPS/eip-2612.
  */
 interface IERC2612 {
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over `owner`'s tokens,
-     * given `owner`'s signed approval.
-     *
-     * IMPORTANT: The same issues {IERC20-approve} has related to transaction
-     * ordering also apply here.
-     *
-     * Emits an {Approval} event.
-     *
-     * Requirements:
-     *
-     * - `owner` cannot be the zero address.
-     * - `spender` cannot be the zero address.
-     * - `deadline` must be a timestamp in the future.
-     * - `v`, `r` and `s` must be a valid `secp256k1` signature from `owner`
-     * over the EIP712-formatted function arguments.
-     * - the signature must use ``owner``'s current nonce (see {nonces}).
-     *
-     * For more information on the signature format, see the
-     * https://eips.ethereum.org/EIPS/eip-2612#specification[relevant EIP
-     * section].
-     */
-    function permit(address owner, address spender, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
 
     /**
      * @dev Returns the current ERC2612 nonce for `owner`. This value must be
@@ -196,7 +116,9 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     using SafeERC20 for IERC20;
     string public name;
     string public symbol;
-    uint8  public immutable decimals;
+    uint8  public immutable override decimals;
+
+    address public immutable underlying;
 
     bytes32 public constant PERMIT_TYPEHASH = keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant TRANSFER_TYPEHASH = keccak256("Transfer(address owner,address to,uint256 value,uint256 nonce,uint256 deadline)");
@@ -257,10 +179,14 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     event LogSwapin(bytes32 indexed txhash, address indexed account, uint amount);
     event LogSwapout(address indexed account, address indexed bindaddr, uint amount);
 
-    constructor(string memory _name, string memory _symbol, uint8 _decimals, address _mpc) {
+    constructor(string memory _name, string memory _symbol, uint8 _decimals, address _underlying, address _mpc) {
         name = _name;
         symbol = _symbol;
         decimals = _decimals;
+        underlying = _underlying;
+        if (_underlying != address(0x0)) {
+            require(_decimals == IERC20(_underlying).decimals());
+        }
 
         _newMPC = _mpc;
         _newMPCEffectiveTime = block.timestamp;
@@ -279,6 +205,59 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     /// @dev Returns the total supply of AnyswapV2ERC20 token as the ETH held in this contract.
     function totalSupply() external view override returns (uint256) {
         return _totalSupply;
+    }
+
+    function depositWithPermit(address target, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s, address to) external returns (uint) {
+        IERC20(underlying).permit(target, address(this), value, deadline, v, r, s);
+        IERC20(underlying).safeTransferFrom(target, address(this), value);
+        return _deposit(value, to);
+    }
+
+    function depositWithTransferPermit(address target, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s, address to) external returns (uint) {
+        IERC20(underlying).transferWithPermit(target, address(this), value, deadline, v, r, s);
+        return _deposit(value, to);
+    }
+
+    function deposit() external returns (uint) {
+        require(underlying != address(0x0));
+        uint _amount = IERC20(underlying).balanceOf(msg.sender);
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), _amount);
+        return _deposit(_amount, msg.sender);
+    }
+
+    function deposit(uint amount) external returns (uint) {
+        require(underlying != address(0x0));
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
+        return _deposit(amount, msg.sender);
+    }
+
+    function deposit(uint amount, address to) external returns (uint) {
+        require(underlying != address(0x0));
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
+        return _deposit(amount, to);
+    }
+
+    function _deposit(uint amount, address to) internal returns (uint) {
+        _mint(to, amount);
+        return amount;
+    }
+
+    function withdraw() external returns (uint) {
+        return _withdraw(msg.sender, balanceOf[msg.sender], msg.sender);
+    }
+
+    function withdraw(uint amount) external returns (uint) {
+        return _withdraw(msg.sender, amount, msg.sender);
+    }
+
+    function withdraw(uint amount, address to) external returns (uint) {
+        return _withdraw(msg.sender, amount, to);
+    }
+
+    function _withdraw(address from, uint amount, address to) internal returns (uint) {
+        _burn(from, amount);
+        IERC20(underlying).safeTransfer(to, amount);
+        return amount;
     }
 
     /** @dev Creates `amount` tokens and assigns them to `account`, increasing
@@ -369,7 +348,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         emit Approval(target, spender, value);
     }
 
-    function transferWithPermit(address target, address to, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external returns (bool) {
+    function transferWithPermit(address target, address to, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external override returns (bool) {
         require(block.timestamp <= deadline, "AnyswapV2ERC20: Expired permit");
 
         bytes32 hashStruct = keccak256(
