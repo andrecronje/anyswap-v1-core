@@ -197,10 +197,9 @@ interface IwNATIVE {
 }
 
 interface AnyswapV1ERC20 {
-    function Swapin(bytes32 txhash, address account, uint256 amount) external returns (bool);
-    function Swapout(uint256 amount, address bindaddr) external returns (bool);
-    function changeDCRMOwner(address newMPC) external returns (bool);
-    function changeMPC(address newMPC) external returns (bool);
+    function mint(address to, uint256 amount) external returns (bool);
+    function burn(address from, uint256 amount) external returns (bool);
+    function changeVault(address newVault) external returns (bool);
 }
 
 /**
@@ -320,51 +319,29 @@ contract AnyswapV1Vault {
         return true;
     }
 
-    function changeMPCv1(address token, address newMPC) public onlyMPC returns (bool) {
-        require(newMPC != address(0), "AnyswapV1Safe: address(0x0)");
-        return AnyswapV1ERC20(token).changeDCRMOwner(newMPC);
-    }
-
-    function changeMPCv2(address token, address newMPC) public onlyMPC returns (bool) {
-        require(newMPC != address(0), "AnyswapV1Safe: address(0x0)");
-        return AnyswapV1ERC20(token).changeMPC(newMPC);
+    function changeVault(address token, address newVault) public onlyMPC returns (bool) {
+        require(newVault != address(0), "AnyswapV1Safe: address(0x0)");
+        return AnyswapV1ERC20(token).changeVault(newVault);
     }
 
     function _anySwapOut(address from, address token, address to, uint amount, uint toChainID) internal {
-        AnyswapV1ERC20(token).Swapout(amount, to);
+        AnyswapV1ERC20(token).burn(from, amount);
         emit LogAnySwapOut(token, from, to, amount, cID(), toChainID);
     }
 
     function anySwapOut(address token, address to, uint amount, uint toChainID) external {
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         _anySwapOut(msg.sender, token, to, amount, toChainID);
-    }
-
-    function anySwapOutWithPermit(
-        address from,
-        address token,
-        address to,
-        uint amount,
-        uint toChainID,
-        uint deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public {
-        IERC20(token).transferWithPermit(from, address(this), amount, deadline, v, r, s);
-        _anySwapOut(from, token, to, amount, toChainID);
     }
 
     // Transfer tokens to the contract to be held on this side on the bridge
     function anySwapOut(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata toChainIDs) external {
         for (uint i = 0; i < tokens.length; i++) {
-            IERC20(tokens[i]).safeTransferFrom(msg.sender, address(this), amounts[i]);
             _anySwapOut(msg.sender, tokens[i], to[i], amounts[i], toChainIDs[i]);
         }
     }
 
     function _anySwapIn(bytes32 txs, address token, address to, uint amount, uint fromChainID) internal {
-        AnyswapV1ERC20(token).Swapin(txs, to, amount);
+        AnyswapV1ERC20(token).mint(to, amount);
         emit LogAnySwapIn(txs, token, to, amount, fromChainID, cID());
     }
 
@@ -426,11 +403,12 @@ contract AnyswapV1Vault {
         uint amountOutMin,
         address[] calldata path,
         address to,
-        uint deadline
+        uint deadline,
+        uint fromChainID
     ) external onlyMPC virtual ensure(deadline) returns (uint[] memory amounts) {
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        AnyswapV1ERC20(path[0]).Swapin(txs, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
+        _anySwapIn(txs, path[0], SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], fromChainID);
         _swap(amounts, path, to);
     }
 
