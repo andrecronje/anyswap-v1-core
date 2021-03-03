@@ -146,7 +146,7 @@ library SushiswapV2Library {
     }
 }
 
-// helper mFTMods for interacting with ERC20 tokens and sending FTM that do not consistently return true/false
+// helper methods for interacting with ERC20 tokens and sending NATIVE that do not consistently return true/false
 library TransferHelper {
     function safeApprove(address token, address to, uint value) internal {
         // bytes4(keccak256(bytes('approve(address,uint256)')));
@@ -166,9 +166,9 @@ library TransferHelper {
         require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: TRANSFER_FROM_FAILED');
     }
 
-    function safeTransferFTM(address to, uint value) internal {
+    function safeTransferNative(address to, uint value) internal {
         (bool success,) = to.call{value:value}(new bytes(0));
-        require(success, 'TransferHelper: FTM_TRANSFER_FAILED');
+        require(success, 'TransferHelper: NATIVE_TRANSFER_FAILED');
     }
 }
 
@@ -497,7 +497,7 @@ contract AnyswapV1Vault {
         _anySwapIn(txs, path[0],  SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], fromChainID);
         _swap(amounts, path, address(this));
         IwNATIVE(wNATIVE).withdraw(amounts[amounts.length - 1]);
-        TransferHelper.safeTransferFTM(to, amounts[amounts.length - 1]);
+        TransferHelper.safeTransferNative(to, amounts[amounts.length - 1]);
     }
 
     // **** LIBRARY FUNCTIONS ****
