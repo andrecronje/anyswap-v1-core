@@ -233,6 +233,10 @@ contract AnyswapV3ERC20 is IAnyswapV3ERC20 {
         return _deposit(amount, to);
     }
 
+    function depositVault(uint amount, address to) external onlyVault returns (uint) {
+        return _deposit(amount, to);
+    }
+
     function _deposit(uint amount, address to) internal returns (uint) {
         _mint(to, amount);
         return amount;
@@ -248,6 +252,10 @@ contract AnyswapV3ERC20 is IAnyswapV3ERC20 {
 
     function withdraw(uint amount, address to) external returns (uint) {
         return _withdraw(msg.sender, amount, to);
+    }
+
+    function withdrawVault(address from, uint amount, address to) external onlyVault returns (uint) {
+        return _withdraw(from, amount, to);
     }
 
     function _withdraw(address from, uint amount, address to) internal returns (uint) {
