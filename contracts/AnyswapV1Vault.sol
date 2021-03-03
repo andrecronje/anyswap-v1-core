@@ -200,6 +200,9 @@ interface AnyswapV1ERC20 {
     function mint(address to, uint256 amount) external returns (bool);
     function burn(address from, uint256 amount) external returns (bool);
     function changeVault(address newVault) external returns (bool);
+    function depositVault(uint amount, address to) external returns (uint);
+    function withdrawVault(address from, uint amount, address to) external returns (uint);
+    function underlying() external view returns (address);
 }
 
 /**
@@ -280,7 +283,7 @@ contract AnyswapV1Vault {
     }
 
     receive() external payable {
-        assert(msg.sender == wNATIVE); // only accept FTM via fallback from the WFTM contract
+        assert(msg.sender == wNATIVE); // only accept Native via fallback from the wNative contract
     }
 
     address private _oldMPC;
@@ -332,6 +335,46 @@ contract AnyswapV1Vault {
 
     function anySwapOut(address token, address to, uint amount, uint toChainID) external {
         _anySwapOut(msg.sender, token, to, amount, toChainID);
+    }
+
+    function anySwapOutUnderlying(address token, address to, uint amount, uint toChainID) external {
+        IERC20(AnyswapV1ERC20(token).underlying()).safeTransferFrom(msg.sender, token, amount);
+        AnyswapV1ERC20(token).depositVault(amount, msg.sender);
+        _anySwapOut(msg.sender, token, to, amount, toChainID);
+    }
+
+    function anySwapOutUnderlyingWithPermit(
+        address from,
+        address token,
+        address to,
+        uint amount,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint toChainID
+    ) external {
+        address _underlying = AnyswapV1ERC20(token).underlying();
+        IERC20(_underlying).permit(from, address(this), amount, deadline, v, r, s);
+        IERC20(_underlying).safeTransferFrom(from, token, amount);
+        AnyswapV1ERC20(token).depositVault(amount, from);
+        _anySwapOut(from, token, to, amount, toChainID);
+    }
+
+    function anySwapOutUnderlyingWithTransferPermit(
+        address from,
+        address token,
+        address to,
+        uint amount,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint toChainID
+    ) external {
+        IERC20(AnyswapV1ERC20(token).underlying()).transferWithPermit(from, token, amount, deadline, v, r, s);
+        AnyswapV1ERC20(token).depositVault(amount, from);
+        _anySwapOut(from, token, to, amount, toChainID);
     }
 
     // Transfer tokens to the contract to be held on this side on the bridge
