@@ -393,6 +393,12 @@ contract AnyswapV1Vault {
         _anySwapIn(txs, token, to, amount, fromChainID);
     }
 
+    function anySwapInUnderlying(bytes32 txs, address token, address to, uint amount, uint fromChainID) external onlyMPC {
+        _anySwapIn(txs, token, to, amount, fromChainID);
+        AnyswapV1ERC20(token).withdrawVault(to, amount, to);
+    }
+
+
     // Transfer tokens out of the contract with redemption on other side
     function anySwapIn(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts, uint[] calldata fromChainIDs) external onlyMPC {
         for (uint i = 0; i < tokens.length; i++) {
