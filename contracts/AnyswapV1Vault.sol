@@ -295,6 +295,8 @@ contract AnyswapV1Vault {
     event LogChangeRouter(address indexed oldRouter, address indexed newRouter, uint chainID);
     event LogAnySwapIn(bytes32 indexed txhash, address indexed token, address indexed to, uint amount, uint fromChainID, uint toChainID);
     event LogAnySwapOut(address indexed token, address indexed from, address indexed to, uint amount, uint fromChainID, uint toChainID);
+    event LogAnySwapTradeTokensForTokens(address[] indexed path, address indexed from, address indexed to, uint amountIn, uint amountOutMin, uint fromChainID, uint toChainID);
+    event LogAnySwapTradeTokensForNative(address[] indexed path, address indexed from, address indexed to, uint amountIn, uint amountOutMin, uint fromChainID, uint toChainID);
     event LogAnyCallQueue(address indexed callContract, uint value, bytes data, uint fromChainID, uint toChainID);
     event LogAnyCallExecute(address indexed callContract, uint value, bytes data, bool success, uint fromChainID, uint toChainID);
 
@@ -333,10 +335,12 @@ contract AnyswapV1Vault {
         emit LogAnySwapOut(token, from, to, amount, cID(), toChainID);
     }
 
+    // Swaps `amount` `token` from this chain to `toChainID` chain with recipient `to`
     function anySwapOut(address token, address to, uint amount, uint toChainID) external {
         _anySwapOut(msg.sender, token, to, amount, toChainID);
     }
 
+    // Swaps `amount` `token` from this chain to `toChainID` chain with recipient `to` by minting with `underlying`
     function anySwapOutUnderlying(address token, address to, uint amount, uint toChainID) external {
         IERC20(AnyswapV1ERC20(token).underlying()).safeTransferFrom(msg.sender, token, amount);
         AnyswapV1ERC20(token).depositVault(amount, msg.sender);
@@ -377,35 +381,37 @@ contract AnyswapV1Vault {
         _anySwapOut(from, token, to, amount, toChainID);
     }
 
-    // Transfer tokens to the contract to be held on this side on the bridge
     function anySwapOut(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata toChainIDs) external {
         for (uint i = 0; i < tokens.length; i++) {
             _anySwapOut(msg.sender, tokens[i], to[i], amounts[i], toChainIDs[i]);
         }
     }
 
+    // swaps `amount` `token` in `fromChainID` to `to` on this chainID
     function _anySwapIn(bytes32 txs, address token, address to, uint amount, uint fromChainID) internal {
         AnyswapV1ERC20(token).mint(to, amount);
         emit LogAnySwapIn(txs, token, to, amount, fromChainID, cID());
     }
 
+    // swaps `amount` `token` in `fromChainID` to `to` on this chainID
+    // triggered by `anySwapOut`
     function anySwapIn(bytes32 txs, address token, address to, uint amount, uint fromChainID) external onlyMPC {
         _anySwapIn(txs, token, to, amount, fromChainID);
     }
 
+    // swaps `amount` `token` in `fromChainID` to `to` on this chainID with `to` receiving `underlying`
     function anySwapInUnderlying(bytes32 txs, address token, address to, uint amount, uint fromChainID) external onlyMPC {
         _anySwapIn(txs, token, to, amount, fromChainID);
         AnyswapV1ERC20(token).withdrawVault(to, amount, to);
     }
 
+    // extracts mpc fee from bridge fees
     function anySwapFeeTo(address token, uint amount) external onlyMPC {
         address _mpc = mpc();
         AnyswapV1ERC20(token).mint(_mpc, amount);
         AnyswapV1ERC20(token).withdrawVault(_mpc, amount, _mpc);
     }
 
-
-    // Transfer tokens out of the contract with redemption on other side
     function anySwapIn(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts, uint[] calldata fromChainIDs) external onlyMPC {
         for (uint i = 0; i < tokens.length; i++) {
             _anySwapIn(txs[i], tokens[i], to[i], amounts[i], fromChainIDs[i]);
@@ -413,6 +419,7 @@ contract AnyswapV1Vault {
     }
 
     // Call contract for arbitrary execution
+    // Triggered by `anyQueue`
     function anyCall(uint value, address contracts, bytes calldata data, uint fromChainID) public onlyMPC {
         bool success;
         if (data.length > 0) (success,) = contracts.call{value:value}(data);
@@ -453,6 +460,76 @@ contract AnyswapV1Vault {
         }
     }
 
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        AnyswapV1ERC20(path[0]).burn(msg.sender, amountIn);
+        emit LogAnySwapTradeTokensForTokens(path, msg.sender, to, amountIn, amountOutMin, cID(), toChainID);
+    }
+
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForTokensUnderlying(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        IERC20(AnyswapV1ERC20(path[0]).underlying()).safeTransferFrom(msg.sender, path[0], amountIn);
+        AnyswapV1ERC20(path[0]).depositVault(amountIn, msg.sender);
+        AnyswapV1ERC20(path[0]).burn(msg.sender, amountIn);
+        emit LogAnySwapTradeTokensForTokens(path, msg.sender, to, amountIn, amountOutMin, cID(), toChainID);
+    }
+
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForTokensUnderlyingWithPermit(
+        address from,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        address _underlying = AnyswapV1ERC20(path[0]).underlying();
+        IERC20(_underlying).permit(from, address(this), amountIn, deadline, v, r, s);
+        IERC20(_underlying).safeTransferFrom(from, path[0], amountIn);
+        AnyswapV1ERC20(path[0]).depositVault(amountIn, from);
+        AnyswapV1ERC20(path[0]).burn(from, amountIn);
+        emit LogAnySwapTradeTokensForTokens(path, from, to, amountIn, amountOutMin, cID(), toChainID);
+    }
+
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForTokensUnderlyingWithTransferPermit(
+        address from,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        IERC20(AnyswapV1ERC20(path[0]).underlying()).transferWithPermit(from, path[0], amountIn, deadline, v, r, s);
+        AnyswapV1ERC20(path[0]).depositVault(amountIn, from);
+        AnyswapV1ERC20(path[0]).burn(from, amountIn);
+        emit LogAnySwapTradeTokensForTokens(path, from, to, amountIn, amountOutMin, cID(), toChainID);
+    }
+
+    // Swaps `amounts[path.length-1]` `path[path.length-1]` to `to` on this chain
+    // Triggered by `anySwapOutExactTokensForTokens`
     function anySwapInExactTokensForTokens(
         bytes32 txs,
         uint amountIn,
@@ -468,83 +545,85 @@ contract AnyswapV1Vault {
         _swap(amounts, path, to);
     }
 
-    function anySwapOutExactTokensForTokensWithTransferPermit(
-        address from,
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline,
-        uint toChainID,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
-        amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        IERC20(path[0]).transferWithPermit(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], deadline, v, r, s);
-        _swap(amounts, path, from);
-        _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
-    }
-
-    function anySwapOutExactTokensForTokensWithPermit(
-        address from,
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline,
-        uint toChainID,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
-        amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        IERC20(path[0]).permit(from, address(this), amounts[0], deadline, v, r, s);
-        IERC20(path[0]).safeTransferFrom(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
-        _swap(amounts, path, from);
-        _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
-    }
-
-    function anySwapOutExactTokensForTokens(
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForNative(
         uint amountIn,
         uint amountOutMin,
         address[] calldata path,
         address to,
         uint deadline,
         uint toChainID
-    ) external virtual ensure(deadline) returns (uint[] memory amounts) {
-        amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        IERC20(path[0]).safeTransferFrom(msg.sender, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
-        _swap(amounts, path, msg.sender);
-        _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
+    ) external virtual ensure(deadline) {
+        AnyswapV1ERC20(path[0]).burn(msg.sender, amountIn);
+        emit LogAnySwapTradeTokensForNative(path, msg.sender, to, amountIn, amountOutMin, cID(), toChainID);
     }
 
-    function anySwapOutExactNativeForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint toChainID)
-        external
-        virtual
-        payable
-        ensure(deadline)
-        returns (uint[] memory amounts)
-    {
-        require(path[0] == wNATIVE, 'SushiswapV2Router: INVALID_PATH');
-        amounts = SushiswapV2Library.getAmountsOut(factory, msg.value, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        IwNATIVE(wNATIVE).deposit{value: amounts[0]}();
-        assert(IwNATIVE(wNATIVE).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
-        _swap(amounts, path, msg.sender);
-        _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForNativeUnderlying(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        IERC20(AnyswapV1ERC20(path[0]).underlying()).safeTransferFrom(msg.sender, path[0], amountIn);
+        AnyswapV1ERC20(path[0]).depositVault(amountIn, msg.sender);
+        AnyswapV1ERC20(path[0]).burn(msg.sender, amountIn);
+        emit LogAnySwapTradeTokensForNative(path, msg.sender, to, amountIn, amountOutMin, cID(), toChainID);
     }
 
-    function anySwapInExactTokensForNative(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline, uint fromChainID)
-        external
-        onlyMPC
-        virtual
-        ensure(deadline)
-        returns (uint[] memory amounts)
-    {
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForNativeUnderlyingWithPermit(
+        address from,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        address _underlying = AnyswapV1ERC20(path[0]).underlying();
+        IERC20(_underlying).permit(from, address(this), amountIn, deadline, v, r, s);
+        IERC20(_underlying).safeTransferFrom(from, path[0], amountIn);
+        AnyswapV1ERC20(path[0]).depositVault(amountIn, from);
+        AnyswapV1ERC20(path[0]).burn(from, amountIn);
+        emit LogAnySwapTradeTokensForNative(path, from, to, amountIn, amountOutMin, cID(), toChainID);
+    }
+
+    // sets up a cross-chain trade from this chain to `toChainID` for `path` trades to `to`
+    function anySwapOutExactTokensForNativeUnderlyingWithTransferPermit(
+        address from,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint toChainID
+    ) external virtual ensure(deadline) {
+        IERC20(AnyswapV1ERC20(path[0]).underlying()).transferWithPermit(from, path[0], amountIn, deadline, v, r, s);
+        AnyswapV1ERC20(path[0]).depositVault(amountIn, from);
+        AnyswapV1ERC20(path[0]).burn(from, amountIn);
+        emit LogAnySwapTradeTokensForNative(path, from, to, amountIn, amountOutMin, cID(), toChainID);
+    }
+
+    // Swaps `amounts[path.length-1]` `path[path.length-1]` to `to` on this chain
+    // Triggered by `anySwapOutExactTokensForNative`
+    function anySwapInExactTokensForNative(
+        bytes32 txs,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline,
+        uint fromChainID
+    ) external onlyMPC virtual ensure(deadline) returns (uint[] memory amounts) {
         require(path[path.length - 1] == wNATIVE, 'SushiswapV2Router: INVALID_PATH');
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
