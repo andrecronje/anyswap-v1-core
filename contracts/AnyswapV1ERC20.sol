@@ -215,20 +215,17 @@ contract AnyswapV3ERC20 is IAnyswapV3ERC20 {
     }
 
     function deposit() external returns (uint) {
-        require(underlying != address(0x0));
         uint _amount = IERC20(underlying).balanceOf(msg.sender);
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), _amount);
         return _deposit(_amount, msg.sender);
     }
 
     function deposit(uint amount) external returns (uint) {
-        require(underlying != address(0x0));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
         return _deposit(amount, msg.sender);
     }
 
     function deposit(uint amount, address to) external returns (uint) {
-        require(underlying != address(0x0));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
         return _deposit(amount, to);
     }
@@ -238,6 +235,7 @@ contract AnyswapV3ERC20 is IAnyswapV3ERC20 {
     }
 
     function _deposit(uint amount, address to) internal returns (uint) {
+        require(underlying != address(0x0) && underlying != address(this));
         _mint(to, amount);
         return amount;
     }
