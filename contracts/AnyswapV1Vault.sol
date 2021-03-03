@@ -290,10 +290,10 @@ contract AnyswapV1Vault {
 
     event LogChangeMPC(address indexed oldMPC, address indexed newMPC, uint indexed effectiveTime, uint chainID);
     event LogChangeRouter(address indexed oldRouter, address indexed newRouter, uint chainID);
-    event LogAnySwapIn(bytes32 indexed txhash, address indexed token, address indexed to, uint amount, uint chainID);
-    event LogAnySwapOut(address indexed token, address indexed from, address indexed to, uint amount, uint chainID);
-    event LogAnyCallQueue(address indexed callContract, uint value, bytes data, uint chainID);
-    event LogAnyCallExecute(address indexed callContract, uint value, bytes data, bool success, uint chainID);
+    event LogAnySwapIn(bytes32 indexed txhash, address indexed token, address indexed to, uint amount, uint fromChainID, uint toChainID);
+    event LogAnySwapOut(address indexed token, address indexed from, address indexed to, uint amount, uint fromChainID, uint toChainID);
+    event LogAnyCallQueue(address indexed callContract, uint value, bytes data, uint fromChainID, uint toChainID);
+    event LogAnyCallExecute(address indexed callContract, uint value, bytes data, bool success, uint fromChainID, uint toChainID);
 
     modifier onlyMPC() {
         require(msg.sender == mpc(), "AnyswapV1Safe: FORBIDDEN");
@@ -330,14 +330,14 @@ contract AnyswapV1Vault {
         return AnyswapV1ERC20(token).changeMPC(newMPC);
     }
 
-    function _anySwapOut(address from, address token, address to, uint amount, uint chainID) internal {
+    function _anySwapOut(address from, address token, address to, uint amount, uint toChainID) internal {
         AnyswapV1ERC20(token).Swapout(amount, to);
-        emit LogAnySwapOut(token, from, to, amount, chainID);
+        emit LogAnySwapOut(token, from, to, amount, cID(), toChainID);
     }
 
-    function anySwapOut(address token, address to, uint amount, uint chainID) external {
+    function anySwapOut(address token, address to, uint amount, uint toChainID) external {
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        _anySwapOut(msg.sender, token, to, amount, chainID);
+        _anySwapOut(msg.sender, token, to, amount, toChainID);
     }
 
     function anySwapOutWithPermit(
@@ -345,63 +345,63 @@ contract AnyswapV1Vault {
         address token,
         address to,
         uint amount,
-        uint chainID,
+        uint toChainID,
         uint deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) public {
         IERC20(token).transferWithPermit(from, address(this), amount, deadline, v, r, s);
-        _anySwapOut(from, token, to, amount, chainID);
+        _anySwapOut(from, token, to, amount, toChainID);
     }
 
     // Transfer tokens to the contract to be held on this side on the bridge
-    function anySwapOut(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata chainIDs) external {
+    function anySwapOut(address[] calldata tokens, address[] calldata to, uint[] calldata amounts, uint[] calldata toChainIDs) external {
         for (uint i = 0; i < tokens.length; i++) {
             IERC20(tokens[i]).safeTransferFrom(msg.sender, address(this), amounts[i]);
-            _anySwapOut(msg.sender, tokens[i], to[i], amounts[i], chainIDs[i]);
+            _anySwapOut(msg.sender, tokens[i], to[i], amounts[i], toChainIDs[i]);
         }
     }
 
-    function _anySwapIn(bytes32 txs, address token, address to, uint amount) internal {
+    function _anySwapIn(bytes32 txs, address token, address to, uint amount, uint fromChainID) internal {
         AnyswapV1ERC20(token).Swapin(txs, to, amount);
-        emit LogAnySwapIn(txs, token, to, amount, cID());
+        emit LogAnySwapIn(txs, token, to, amount, fromChainID, cID());
     }
 
-    function anySwapIn(bytes32 txs, address token, address to, uint amount) external onlyMPC {
-        _anySwapIn(txs, token, to, amount);
+    function anySwapIn(bytes32 txs, address token, address to, uint amount, uint fromChainID) external onlyMPC {
+        _anySwapIn(txs, token, to, amount, fromChainID);
     }
 
     // Transfer tokens out of the contract with redemption on other side
-    function anySwapIn(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts) external onlyMPC {
+    function anySwapIn(bytes32[] calldata txs, address[] calldata tokens, address[] calldata to, uint256[] calldata amounts, uint[] calldata fromChainIDs) external onlyMPC {
         for (uint i = 0; i < tokens.length; i++) {
-            _anySwapIn(txs[i], tokens[i], to[i], amounts[i]);
+            _anySwapIn(txs[i], tokens[i], to[i], amounts[i], fromChainIDs[i]);
         }
     }
 
     // Call contract for arbitrary execution
-    function anyCall(uint value, address contracts, bytes calldata data) public onlyMPC {
+    function anyCall(uint value, address contracts, bytes calldata data, uint fromChainID) public onlyMPC {
         bool success;
         if (data.length > 0) (success,) = contracts.call{value:value}(data);
-        emit LogAnyCallExecute(contracts, value, data, success, cID());
+        emit LogAnyCallExecute(contracts, value, data, success, fromChainID, cID());
     }
 
     // Call contract for arbitrary execution
-    function anyCall(uint[] calldata values, address[] calldata contracts, bytes[] calldata data) external onlyMPC {
+    function anyCall(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata fromChainIDs) external onlyMPC {
         for (uint i = 0; i < contracts.length; i++) {
-            anyCall(values[i], contracts[i], data[i]);
+            anyCall(values[i], contracts[i], data[i], fromChainIDs[i]);
         }
     }
 
     // Queue cross-chain contract event
-    function anyQueue(uint value, address contracts, bytes calldata data, uint chainID) external {
-        emit LogAnyCallQueue(contracts, value, data, chainID);
+    function anyQueue(uint value, address contracts, bytes calldata data, uint fromChainID, uint toChainID) external {
+        emit LogAnyCallQueue(contracts, value, data, fromChainID, toChainID);
     }
 
     // Queue cross-chain contract event
-    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata chainIDs) external {
+    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata fromChainIDs, uint[] calldata toChainIDs) external {
         for (uint i = 0; i < contracts.length; i++) {
-            emit LogAnyCallQueue(contracts[i], values[i], data[i], chainIDs[i]);
+            emit LogAnyCallQueue(contracts[i], values[i], data[i], fromChainIDs[i], toChainIDs[i]);
         }
     }
 
@@ -441,7 +441,7 @@ contract AnyswapV1Vault {
         address[] calldata path,
         address to,
         uint deadline,
-        uint chainID,
+        uint toChainID,
         uint8 v,
         bytes32 r,
         bytes32 s
@@ -450,7 +450,7 @@ contract AnyswapV1Vault {
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IERC20(path[0]).transferWithPermit(from, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], deadline, v, r, s);
         _swap(amounts, path, address(this));
-        _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
+        _anySwapOut(from, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
     }
 
     function anySwapOutExactTokensForTokens(
@@ -459,16 +459,16 @@ contract AnyswapV1Vault {
         address[] calldata path,
         address to,
         uint deadline,
-        uint chainID
+        uint toChainID
     ) external virtual ensure(deadline) returns (uint[] memory amounts) {
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         IERC20(path[0]).safeTransferFrom(msg.sender, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
         _swap(amounts, path, address(this));
-        _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
+        _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
     }
 
-    function anySwapOutExactNativeForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
+    function anySwapOutExactNativeForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint toChainID)
         external
         virtual
         payable
@@ -481,10 +481,10 @@ contract AnyswapV1Vault {
         IwNATIVE(wNATIVE).deposit{value: amounts[0]}();
         assert(IwNATIVE(wNATIVE).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
         _swap(amounts, path, address(this));
-        _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
+        _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], toChainID);
     }
 
-    function anySwapInExactTokensForNative(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    function anySwapInExactTokensForNative(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline, uint fromChainID)
         external
         onlyMPC
         virtual
@@ -494,7 +494,7 @@ contract AnyswapV1Vault {
         require(path[path.length - 1] == wNATIVE, 'SushiswapV2Router: INVALID_PATH');
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        AnyswapV1ERC20(path[0]).Swapin(txs, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
+        _anySwapIn(txs, path[0],  SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0], fromChainID);
         _swap(amounts, path, address(this));
         IwNATIVE(wNATIVE).withdraw(amounts[amounts.length - 1]);
         TransferHelper.safeTransferFTM(to, amounts[amounts.length - 1]);
