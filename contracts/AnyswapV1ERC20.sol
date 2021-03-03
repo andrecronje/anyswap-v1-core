@@ -40,25 +40,25 @@ interface IERC2612 {
     function nonces(address owner) external view returns (uint256);
 }
 
-/// @dev Wrapped ERC-20 v10 (AnyswapV2ERC20) is an ERC-20 ERC-20 wrapper. You can `deposit` ERC-20 and obtain an AnyswapV2ERC20 balance which can then be operated as an ERC-20 token. You can
-/// `withdraw` ERC-20 from AnyswapV2ERC20, which will then burn AnyswapV2ERC20 token in your wallet. The amount of AnyswapV2ERC20 token in any wallet is always identical to the
+/// @dev Wrapped ERC-20 v10 (AnyswapV3ERC20) is an ERC-20 ERC-20 wrapper. You can `deposit` ERC-20 and obtain an AnyswapV3ERC20 balance which can then be operated as an ERC-20 token. You can
+/// `withdraw` ERC-20 from AnyswapV3ERC20, which will then burn AnyswapV3ERC20 token in your wallet. The amount of AnyswapV3ERC20 token in any wallet is always identical to the
 /// balance of ERC-20 deposited minus the ERC-20 withdrawn with that specific wallet.
-interface IAnyswapV2ERC20 is IERC20, IERC2612 {
+interface IAnyswapV3ERC20 is IERC20, IERC2612 {
 
-    /// @dev Sets `value` as allowance of `spender` account over caller account's AnyswapV2ERC20 token,
+    /// @dev Sets `value` as allowance of `spender` account over caller account's AnyswapV3ERC20 token,
     /// after which a call is executed to an ERC677-compliant contract with the `data` parameter.
     /// Emits {Approval} event.
     /// Returns boolean value indicating whether operation succeeded.
     /// For more information on approveAndCall format, see https://github.com/ethereum/EIPs/issues/677.
     function approveAndCall(address spender, uint256 value, bytes calldata data) external returns (bool);
 
-    /// @dev Moves `value` AnyswapV2ERC20 token from caller's account to account (`to`),
+    /// @dev Moves `value` AnyswapV3ERC20 token from caller's account to account (`to`),
     /// after which a call is executed to an ERC677-compliant contract with the `data` parameter.
-    /// A transfer to `address(0)` triggers an ERC-20 withdraw matching the sent AnyswapV2ERC20 token in favor of caller.
+    /// A transfer to `address(0)` triggers an ERC-20 withdraw matching the sent AnyswapV3ERC20 token in favor of caller.
     /// Emits {Transfer} event.
     /// Returns boolean value indicating whether operation succeeded.
     /// Requirements:
-    ///   - caller account must have at least `value` AnyswapV2ERC20 token.
+    ///   - caller account must have at least `value` AnyswapV3ERC20 token.
     /// For more information on transferAndCall format, see https://github.com/ethereum/EIPs/issues/677.
     function transferAndCall(address to, uint value, bytes calldata data) external returns (bool);
 }
@@ -112,7 +112,7 @@ library SafeERC20 {
     }
 }
 
-contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
+contract AnyswapV3ERC20 is IAnyswapV3ERC20 {
     using SafeERC20 for IERC20;
     string public name;
     string public symbol;
@@ -124,47 +124,45 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     bytes32 public constant TRANSFER_TYPEHASH = keccak256("Transfer(address owner,address to,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public immutable DOMAIN_SEPARATOR;
 
-    /// @dev Records amount of AnyswapV2ERC20 token owned by account.
+    /// @dev Records amount of AnyswapV3ERC20 token owned by account.
     mapping (address => uint256) public override balanceOf;
     uint256 private _totalSupply;
 
-    address private _oldMPC;
-    address private _newMPC;
-    uint256 private _newMPCEffectiveTime;
+    address private _oldVault;
+    address private _newVault;
+    uint256 private _newVaultEffectiveTime;
 
 
-    modifier onlyMPC() {
-        require(msg.sender == mpc(), "AnyswapV2ERC20: FORBIDDEN");
+    modifier onlyVault() {
+        require(msg.sender == vault(), "AnyswapV3ERC20: FORBIDDEN");
         _;
     }
 
-    function mpc() public view returns (address) {
-        if (block.timestamp >= _newMPCEffectiveTime) {
-            return _newMPC;
+    function vault() public view returns (address) {
+        if (block.timestamp >= _newVaultEffectiveTime) {
+            return _newVault;
         }
-        return _oldMPC;
+        return _oldVault;
     }
 
 
-    function changeMPC(address newMPC) public onlyMPC returns (bool) {
-        require(newMPC != address(0), "AnyswapV2ERC20: address(0x0)");
-        _oldMPC = mpc();
-        _newMPC = newMPC;
-        _newMPCEffectiveTime = block.timestamp + 2*24*3600;
-        emit LogChangeMPC(_oldMPC, _newMPC, _newMPCEffectiveTime);
+    function changeVault(address newVault) external onlyVault returns (bool) {
+        require(newVault != address(0), "AnyswapV3ERC20: address(0x0)");
+        _oldVault = vault();
+        _newVault = newVault;
+        _newVaultEffectiveTime = block.timestamp + 2*24*3600;
+        emit LogChangeVault(_oldVault, _newVault, _newVaultEffectiveTime);
         return true;
     }
 
-    function Swapin(bytes32 txhash, address to, uint256 amount) public onlyMPC returns (bool) {
+    function mint(address to, uint256 amount) external onlyVault returns (bool) {
         _mint(to, amount);
-        emit LogSwapin(txhash, to, amount);
         return true;
     }
 
-    function Swapout(uint256 amount, address to) public returns (bool) {
-        require(to != address(0), "AnyswapV2ERC20: address(0x0)");
-        _burn(msg.sender, amount);
-        emit LogSwapout(msg.sender, to, amount);
+    function burn(address from, uint256 amount) external onlyVault returns (bool) {
+        require(from != address(0), "AnyswapV3ERC20: address(0x0)");
+        _burn(from, amount);
         return true;
     }
 
@@ -172,14 +170,12 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     /// Every successful call to {permit} increases account's nonce by one. This prevents signature from being used multiple times.
     mapping (address => uint256) public override nonces;
 
-    /// @dev Records number of AnyswapV2ERC20 token that account (second) will be allowed to spend on behalf of another account (first) through {transferFrom}.
+    /// @dev Records number of AnyswapV3ERC20 token that account (second) will be allowed to spend on behalf of another account (first) through {transferFrom}.
     mapping (address => mapping (address => uint256)) public override allowance;
 
-    event LogChangeMPC(address indexed oldMPC, address indexed newMPC, uint indexed effectiveTime);
-    event LogSwapin(bytes32 indexed txhash, address indexed account, uint amount);
-    event LogSwapout(address indexed account, address indexed bindaddr, uint amount);
+    event LogChangeVault(address indexed oldVault, address indexed newVault, uint indexed effectiveTime);
 
-    constructor(string memory _name, string memory _symbol, uint8 _decimals, address _underlying, address _mpc) {
+    constructor(string memory _name, string memory _symbol, uint8 _decimals, address _underlying, address _vault) {
         name = _name;
         symbol = _symbol;
         decimals = _decimals;
@@ -188,8 +184,8 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
             require(_decimals == IERC20(_underlying).decimals());
         }
 
-        _newMPC = _mpc;
-        _newMPCEffectiveTime = block.timestamp;
+        _newVault = _vault;
+        _newVaultEffectiveTime = block.timestamp;
 
         uint256 chainId;
         assembly {chainId := chainid()}
@@ -202,7 +198,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
                 address(this)));
     }
 
-    /// @dev Returns the total supply of AnyswapV2ERC20 token as the ETH held in this contract.
+    /// @dev Returns the total supply of AnyswapV3ERC20 token as the ETH held in this contract.
     function totalSupply() external view override returns (uint256) {
         return _totalSupply;
     }
@@ -296,7 +292,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         emit Transfer(account, address(0), amount);
     }
 
-    /// @dev Sets `value` as allowance of `spender` account over caller account's AnyswapV2ERC20 token.
+    /// @dev Sets `value` as allowance of `spender` account over caller account's AnyswapV3ERC20 token.
     /// Emits {Approval} event.
     /// Returns boolean value indicating whether operation succeeded.
     function approve(address spender, uint256 value) external override returns (bool) {
@@ -307,7 +303,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         return true;
     }
 
-    /// @dev Sets `value` as allowance of `spender` account over caller account's AnyswapV2ERC20 token,
+    /// @dev Sets `value` as allowance of `spender` account over caller account's AnyswapV3ERC20 token,
     /// after which a call is executed to an ERC677-compliant contract with the `data` parameter.
     /// Emits {Approval} event.
     /// Returns boolean value indicating whether operation succeeded.
@@ -320,7 +316,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         return IApprovalReceiver(spender).onTokenApproval(msg.sender, value, data);
     }
 
-    /// @dev Sets `value` as allowance of `spender` account over `owner` account's AnyswapV2ERC20 token, given `owner` account's signed approval.
+    /// @dev Sets `value` as allowance of `spender` account over `owner` account's AnyswapV3ERC20 token, given `owner` account's signed approval.
     /// Emits {Approval} event.
     /// Requirements:
     ///   - `deadline` must be timestamp in future.
@@ -328,9 +324,9 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     ///   - the signature must use `owner` account's current nonce (see {nonces}).
     ///   - the signer cannot be zero address and must be `owner` account.
     /// For more information on signature format, see https://eips.ethereum.org/EIPS/eip-2612#specification[relevant EIP section].
-    /// AnyswapV2ERC20 token implementation adapted from https://github.com/albertocuestacanada/ERC20Permit/blob/master/contracts/ERC20Permit.sol.
+    /// AnyswapV3ERC20 token implementation adapted from https://github.com/albertocuestacanada/ERC20Permit/blob/master/contracts/ERC20Permit.sol.
     function permit(address target, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external override {
-        require(block.timestamp <= deadline, "AnyswapV2ERC20: Expired permit");
+        require(block.timestamp <= deadline, "AnyswapV3ERC20: Expired permit");
 
         bytes32 hashStruct = keccak256(
             abi.encode(
@@ -349,7 +345,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
     }
 
     function transferWithPermit(address target, address to, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external override returns (bool) {
-        require(block.timestamp <= deadline, "AnyswapV2ERC20: Expired permit");
+        require(block.timestamp <= deadline, "AnyswapV3ERC20: Expired permit");
 
         bytes32 hashStruct = keccak256(
             abi.encode(
@@ -365,7 +361,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         require(to != address(0) || to != address(this));
 
         uint256 balance = balanceOf[target];
-        require(balance >= value, "AnyswapV2ERC20: transfer amount exceeds balance");
+        require(balance >= value, "AnyswapV3ERC20: transfer amount exceeds balance");
 
         balanceOf[target] = balance - value;
         balanceOf[to] += value;
@@ -395,16 +391,16 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
     }
 
-    /// @dev Moves `value` AnyswapV2ERC20 token from caller's account to account (`to`).
-    /// A transfer to `address(0)` triggers an ETH withdraw matching the sent AnyswapV2ERC20 token in favor of caller.
+    /// @dev Moves `value` AnyswapV3ERC20 token from caller's account to account (`to`).
+    /// A transfer to `address(0)` triggers an ETH withdraw matching the sent AnyswapV3ERC20 token in favor of caller.
     /// Emits {Transfer} event.
     /// Returns boolean value indicating whether operation succeeded.
     /// Requirements:
-    ///   - caller account must have at least `value` AnyswapV2ERC20 token.
+    ///   - caller account must have at least `value` AnyswapV3ERC20 token.
     function transfer(address to, uint256 value) external override returns (bool) {
         require(to != address(0) || to != address(this));
         uint256 balance = balanceOf[msg.sender];
-        require(balance >= value, "AnyswapV2ERC20: transfer amount exceeds balance");
+        require(balance >= value, "AnyswapV3ERC20: transfer amount exceeds balance");
 
         balanceOf[msg.sender] = balance - value;
         balanceOf[to] += value;
@@ -413,23 +409,23 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         return true;
     }
 
-    /// @dev Moves `value` AnyswapV2ERC20 token from account (`from`) to account (`to`) using allowance mechanism.
+    /// @dev Moves `value` AnyswapV3ERC20 token from account (`from`) to account (`to`) using allowance mechanism.
     /// `value` is then deducted from caller account's allowance, unless set to `type(uint256).max`.
-    /// A transfer to `address(0)` triggers an ETH withdraw matching the sent AnyswapV2ERC20 token in favor of caller.
+    /// A transfer to `address(0)` triggers an ETH withdraw matching the sent AnyswapV3ERC20 token in favor of caller.
     /// Emits {Approval} event to reflect reduced allowance `value` for caller account to spend from account (`from`),
     /// unless allowance is set to `type(uint256).max`
     /// Emits {Transfer} event.
     /// Returns boolean value indicating whether operation succeeded.
     /// Requirements:
-    ///   - `from` account must have at least `value` balance of AnyswapV2ERC20 token.
-    ///   - `from` account must have approved caller to spend at least `value` of AnyswapV2ERC20 token, unless `from` and caller are the same account.
+    ///   - `from` account must have at least `value` balance of AnyswapV3ERC20 token.
+    ///   - `from` account must have approved caller to spend at least `value` of AnyswapV3ERC20 token, unless `from` and caller are the same account.
     function transferFrom(address from, address to, uint256 value) external override returns (bool) {
         require(to != address(0) || to != address(this));
         if (from != msg.sender) {
             // _decreaseAllowance(from, msg.sender, value);
             uint256 allowed = allowance[from][msg.sender];
             if (allowed != type(uint256).max) {
-                require(allowed >= value, "AnyswapV2ERC20: request exceeds allowance");
+                require(allowed >= value, "AnyswapV3ERC20: request exceeds allowance");
                 uint256 reduced = allowed - value;
                 allowance[from][msg.sender] = reduced;
                 emit Approval(from, msg.sender, reduced);
@@ -437,7 +433,7 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         }
 
         uint256 balance = balanceOf[from];
-        require(balance >= value, "AnyswapV2ERC20: transfer amount exceeds balance");
+        require(balance >= value, "AnyswapV3ERC20: transfer amount exceeds balance");
 
         balanceOf[from] = balance - value;
         balanceOf[to] += value;
@@ -446,19 +442,19 @@ contract AnyswapV2ERC20 is IAnyswapV2ERC20 {
         return true;
     }
 
-    /// @dev Moves `value` AnyswapV2ERC20 token from caller's account to account (`to`),
+    /// @dev Moves `value` AnyswapV3ERC20 token from caller's account to account (`to`),
     /// after which a call is executed to an ERC677-compliant contract with the `data` parameter.
-    /// A transfer to `address(0)` triggers an ETH withdraw matching the sent AnyswapV2ERC20 token in favor of caller.
+    /// A transfer to `address(0)` triggers an ETH withdraw matching the sent AnyswapV3ERC20 token in favor of caller.
     /// Emits {Transfer} event.
     /// Returns boolean value indicating whether operation succeeded.
     /// Requirements:
-    ///   - caller account must have at least `value` AnyswapV2ERC20 token.
+    ///   - caller account must have at least `value` AnyswapV3ERC20 token.
     /// For more information on transferAndCall format, see https://github.com/ethereum/EIPs/issues/677.
     function transferAndCall(address to, uint value, bytes calldata data) external override returns (bool) {
         require(to != address(0) || to != address(this));
 
         uint256 balance = balanceOf[msg.sender];
-        require(balance >= value, "AnyswapV2ERC20: transfer amount exceeds balance");
+        require(balance >= value, "AnyswapV3ERC20: transfer amount exceeds balance");
 
         balanceOf[msg.sender] = balance - value;
         balanceOf[to] += value;
