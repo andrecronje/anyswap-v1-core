@@ -418,33 +418,6 @@ contract AnyswapV1Vault {
         }
     }
 
-    // Call contract for arbitrary execution
-    // Triggered by `anyQueue`
-    function anyCall(uint value, address contracts, bytes calldata data, uint fromChainID) public onlyMPC {
-        bool success;
-        if (data.length > 0) (success,) = contracts.call{value:value}(data);
-        emit LogAnyCallExecute(contracts, value, data, success, fromChainID, cID());
-    }
-
-    // Call contract for arbitrary execution
-    function anyCall(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata fromChainIDs) external onlyMPC {
-        for (uint i = 0; i < contracts.length; i++) {
-            anyCall(values[i], contracts[i], data[i], fromChainIDs[i]);
-        }
-    }
-
-    // Queue cross-chain contract event
-    function anyQueue(uint value, address contracts, bytes calldata data, uint toChainID) external {
-        emit LogAnyCallQueue(contracts, value, data, cID(), toChainID);
-    }
-
-    // Queue cross-chain contract event
-    function anyQueue(uint[] calldata values, address[] calldata contracts, bytes[] calldata data, uint[] calldata toChainIDs) external {
-        for (uint i = 0; i < contracts.length; i++) {
-            emit LogAnyCallQueue(contracts[i], values[i], data[i], cID(), toChainIDs[i]);
-        }
-    }
-
     // **** SWAP ****
     // requires the initial amount to have already been sent to the first pair
     function _swap(uint[] memory amounts, address[] memory path, address _to) internal virtual {
