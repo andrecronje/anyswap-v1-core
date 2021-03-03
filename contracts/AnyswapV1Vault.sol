@@ -190,7 +190,7 @@ interface ISushiswapV2Factory {
     function setMigrator(address) external;
 }
 
-interface IWFTM {
+interface IwNATIVE {
     function deposit() external payable;
     function transfer(address to, uint value) external returns (bool);
     function withdraw(uint) external;
@@ -265,22 +265,22 @@ contract AnyswapV1Vault {
     using SafeMathSushiswap for uint;
 
     address public immutable factory;
-    address public immutable WFTM;
+    address public immutable wNATIVE;
 
     modifier ensure(uint deadline) {
         require(deadline >= block.timestamp, 'SushiswapV2Router: EXPIRED');
         _;
     }
 
-    constructor(address _factory, address _WFTM, address _mpc) {
+    constructor(address _factory, address _wNATIVE, address _mpc) {
         _newMPC = _mpc;
         _newMPCEffectiveTime = block.timestamp;
         factory = _factory;
-        WFTM = _WFTM;
+        wNATIVE = _wNATIVE;
     }
 
     receive() external payable {
-        assert(msg.sender == WFTM); // only accept FTM via fallback from the WFTM contract
+        assert(msg.sender == wNATIVE); // only accept FTM via fallback from the WFTM contract
     }
 
     address private _oldMPC;
@@ -468,35 +468,35 @@ contract AnyswapV1Vault {
         _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
-    function anySwapOutExactFTMForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
+    function anySwapOutExactNativeForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline, uint chainID)
         external
         virtual
         payable
         ensure(deadline)
         returns (uint[] memory amounts)
     {
-        require(path[0] == WFTM, 'SushiswapV2Router: INVALID_PATH');
+        require(path[0] == wNATIVE, 'SushiswapV2Router: INVALID_PATH');
         amounts = SushiswapV2Library.getAmountsOut(factory, msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
-        IWFTM(WFTM).deposit{value: amounts[0]}();
-        assert(IWFTM(WFTM).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
+        IwNATIVE(wNATIVE).deposit{value: amounts[0]}();
+        assert(IwNATIVE(wNATIVE).transfer(SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]));
         _swap(amounts, path, address(this));
         _anySwapOut(msg.sender, path[path.length - 1], to, amounts[amounts.length - 1], chainID);
     }
 
-    function anySwapInExactTokensForFTM(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    function anySwapInExactTokensForNative(bytes32 txs, uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
         external
         onlyMPC
         virtual
         ensure(deadline)
         returns (uint[] memory amounts)
     {
-        require(path[path.length - 1] == WFTM, 'SushiswapV2Router: INVALID_PATH');
+        require(path[path.length - 1] == wNATIVE, 'SushiswapV2Router: INVALID_PATH');
         amounts = SushiswapV2Library.getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'SushiswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT');
         AnyswapV1ERC20(path[0]).Swapin(txs, SushiswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]);
         _swap(amounts, path, address(this));
-        IWFTM(WFTM).withdraw(amounts[amounts.length - 1]);
+        IwNATIVE(wNATIVE).withdraw(amounts[amounts.length - 1]);
         TransferHelper.safeTransferFTM(to, amounts[amounts.length - 1]);
     }
 
