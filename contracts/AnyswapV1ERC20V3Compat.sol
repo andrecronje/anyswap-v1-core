@@ -159,12 +159,12 @@ contract AnyswapV1ERC20 is IAnyswapV3ERC20 {
         return true;
     }
 
-    function changeDCRMOwner(address newVault) public onlyVault returns (bool) {
+    function changeMPCOwner(address newVault) public onlyVault returns (bool) {
         require(newVault != address(0), "AnyswapV3ERC20: address(0x0)");
         _oldVault = vault();
         _newVault = newVault;
         _newVaultEffectiveTime = block.timestamp + 2*24*3600;
-        emit LogChangeDCRMOwner(_oldVault, _newVault, _newVaultEffectiveTime);
+        emit LogChangeMPCOwner(_oldVault, _newVault, _newVaultEffectiveTime);
         return true;
     }
 
@@ -200,7 +200,7 @@ contract AnyswapV1ERC20 is IAnyswapV3ERC20 {
     mapping (address => mapping (address => uint256)) public override allowance;
 
     event LogChangeVault(address indexed oldVault, address indexed newVault, uint indexed effectiveTime);
-    event LogChangeDCRMOwner(address indexed oldOwner, address indexed newOwner, uint indexed effectiveHeight);
+    event LogChangeMPCOwner(address indexed oldOwner, address indexed newOwner, uint indexed effectiveHeight);
     event LogSwapin(bytes32 indexed txhash, address indexed account, uint amount);
     event LogSwapout(address indexed account, address indexed bindaddr, uint amount);
 
