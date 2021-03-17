@@ -137,8 +137,10 @@ contract AnyswapV4ERC20 is IAnyswapV3ERC20 {
     // configurable delay for timelock functions
     uint public delay = 2*24*3600;
 
+
     // set of minters, can be this bridge or other bridges
-    mapping(address => bool) isMinter;
+    mapping(address => bool) public isMinter;
+    address[] public minters;
 
     // primary controller of the token contract
     address public vault;
@@ -209,6 +211,11 @@ contract AnyswapV4ERC20 is IAnyswapV3ERC20 {
     // No time delay revoke minter emergency function
     function revokeMinter(address _auth) external onlyVault {
         isMinter[_auth] = false;
+        minters.push(_auth);
+    }
+
+    function getAllMinters() external view returns (address[] memory) {
+        return minters;
     }
 
 
