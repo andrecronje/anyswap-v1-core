@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-pragma solidity 0.8.1;
+pragma solidity 0.8.2;
 
 /**
  * @dev Interface of the ERC20 standard as defined in the EIP.
@@ -183,7 +183,9 @@ contract AnyswapV4ERC20 is IAnyswapV3ERC20 {
     function initVault(address _vault) external onlyVault {
         require(_init);
         vault = _vault;
+        pendingVault = _vault;
         isMinter[_vault] = true;
+        minters.push(_vault);
         delayVault = block.timestamp;
         _init = false;
     }
@@ -206,12 +208,12 @@ contract AnyswapV4ERC20 is IAnyswapV3ERC20 {
     function applyMinter() external onlyVault {
         require(block.timestamp >= delayMinter);
         isMinter[pendingMinter] = true;
+        minters.push(pendingMinter);
     }
 
     // No time delay revoke minter emergency function
     function revokeMinter(address _auth) external onlyVault {
         isMinter[_auth] = false;
-        minters.push(_auth);
     }
 
     function getAllMinters() external view returns (address[] memory) {
@@ -289,6 +291,7 @@ contract AnyswapV4ERC20 is IAnyswapV3ERC20 {
         _vaultOnly = false;
 
         vault = _vault;
+        pendingVault = _vault;
         delayVault = block.timestamp;
 
         uint256 chainId;
